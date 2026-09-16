@@ -298,6 +298,7 @@
     border-radius: var(--radius-s); padding: 0 14px; cursor: pointer; white-space: nowrap;
     height: 41px; box-sizing: border-box;
     display: inline-flex; align-items: center; justify-content: center;
+    text-decoration: none;
   }
   .btn-secondary:hover{ background: var(--teal-soft); }
   .btn-secondary:disabled{ opacity: 0.5; cursor: default; }
@@ -310,9 +311,10 @@
   .appt-form{
     display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end;
     background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-m); padding: 16px;
+    margin-top: 14px;
   }
 
-  .appt-list{ display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+  .appt-list{ display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
   .appt-row{
     display: flex; align-items: center; gap: 12px;
     background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-m);
@@ -432,6 +434,8 @@
 
   <section>
     <h2>Doctor's appointment</h2>
+    <div class="appt-list" id="appt-list"></div>
+    
     <div class="appt-form">
       <div class="field-group">
         <label for="appt-date">Date</label>
@@ -442,8 +446,8 @@
         <input type="time" id="appt-time" value="09:00" />
       </div>
       <button class="add-btn" id="add-appt-btn">Add</button>
+      <a id="export-ics-btn" class="btn-secondary" href="#" style="display:none;">Export to calendar app</a>
     </div>
-    <div class="appt-list" id="appt-list"></div>
   </section>
 
   <section>
@@ -606,6 +610,7 @@
     takenAtInput.value = nowHHMM();
     renderToday();
     renderCalendar();
+    updateExportIcsUI();
     if(selectedDateKey === key) renderDayDetail(key);
   });
 
@@ -875,7 +880,7 @@
         toggleHotActivity(key, cb.checked);
         renderCalendar();
       };
-      const lab = document.createElement('label');
+      const lab = document.label ? document.label : document.createElement('label');
       lab.htmlFor = cb.id;
       lab.className = 'hot-toggle-label';
       lab.textContent = '🔥 Save sexual activity for this date';
@@ -898,7 +903,55 @@
     saveData();
     renderApptList();
     renderCalendar();
+    updateExportIcsUI();
     if(selectedDateKey === dateKey) renderDayDetail(dateKey);
+  });
+
+  function updateExportIcsUI(){
+    const exportBtn = document.getElementById('export-ics-btn');
+    const hasAppointments = Object.values(data.appointments).some(
+      appts => Array.isArray(appts) && appts.length > 0
+    );
+    exportBtn.style.display = hasAppointments ? 'inline-flex' : 'none';
+  }
+
+  // ---------- Dynamic .ics file generation for Calendar Export ----------
+  document.getElementById('export-ics-btn').addEventListener('click', (e) => {
+    e.preventDefault();
+
+    const all = [];
+    Object.keys(data.appointments).forEach(dateKey => {
+      (data.appointments[dateKey] || []).forEach(appt => all.push({ appt, dateKey }));
+    });
+    if(all.length === 0) return;
+
+    all.sort((a,b) => (a.dateKey + a.appt.time).localeCompare(b.dateKey + b.appt.time));
+    const { appt, dateKey: dateVal } = all[0];
+    const timeVal = appt.time || '09:00';
+
+    const [year, month, day] = dateVal.split('-');
+    const [hrs, mins] = timeVal.split(':');
+    
+    // Set 1-hour appointment block duration
+    const startDateStr = `${year}${month}${day}T${hrs}${mins}00`;
+    const endHrs = String(Math.min(23, parseInt(hrs, 10) + 1)).padStart(2, '0');
+    const endDateStr = `${year}${month}${day}T${endHrs}${mins}00`;
+
+    const icsContent = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//PrEP Tracker//EN',
+      'BEGIN:VEVENT',
+      `SUMMARY:Doctor's Appointment (PrEP)`,
+      `DTSTART:${startDateStr}`,
+      `DTEND:${endDateStr}`,
+      'DESCRIPTION:Scheduled Doctor Appointment tracked via PrEP app.',
+      'END:VEVENT',
+      'END:VCALENDAR'
+    ].join('\r\n');
+
+    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+    downloadBlob(blob, 'doctor-appointment.ics');
   });
 
   function buildApptRow(appt, dateKey){
@@ -921,6 +974,7 @@
       saveData();
       renderApptList();
       renderCalendar();
+      updateExportIcsUI();
       if(selectedDateKey === dateKey) renderDayDetail(dateKey);
     };
     actions.appendChild(delBtn);
@@ -975,18 +1029,18 @@
 
   function updateReminderUI(){
     if(!('Notification' in window)){
-      reminderStatus.innerHTML = "This browser doesn't support notifications.";
+      if(reminderStatus) reminderStatus.innerHTML = "This browser doesn't support notifications.";
       reminderBtn.disabled = true;
       return;
     }
     const perm = Notification.permission;
     if(perm === 'granted'){
-      reminderStatus.innerHTML = '<strong>Reminders are on.</strong> Keep this tab open and you\'ll get a notification at your reminder time if nothing\'s logged yet that day.';
+      if(reminderStatus) reminderStatus.innerHTML = '<strong>Reminders are on.</strong> Keep this tab open and you\'ll get a notification at your reminder time if nothing\'s logged yet that day.';
       reminderBtn.textContent = 'Reminders on';
       reminderBtn.disabled = true;
       startReminderLoop();
     } else if(perm === 'denied'){
-      reminderStatus.innerHTML = "Notifications are blocked for this site. Enable them in your browser's site settings to use reminders.";
+      if(reminderStatus) reminderStatus.innerHTML = "Notifications are blocked for this site. Enable them in your browser's site settings to use reminders.";
       reminderBtn.disabled = true;
     } else {
       reminderBtn.textContent = 'Set browser reminder';
@@ -1038,31 +1092,63 @@
     return /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
       (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   }
-  function showAlarmFallback(){
-    alert("Couldn't open the Clock app automatically. Open your phone's Clock (or Alarm) app and add one manually — most have a \"+\" button on the Alarm tab.");
+
+  function showAlarmFallback(timeFormatted){
+    alert(
+      `Couldn't open your Clock app automatically.\n\n` +
+      `Please open your phone's Clock/Alarm app and set the PrEP reminder for ${timeFormatted}.`
+    );
   }
 
   alarmBtn.addEventListener('click', () => {
+    // Always use the PrEP reminder time saved in the tracker.
+    const timeVal = reminderTimeInput.value || '09:00';
+    const [hrs, mins] = timeVal.split(':').map(Number);
+    const timeFormatted = formatTime(timeVal);
+
     if(isAndroid()){
-      try{ window.location.href = 'intent:#Intent;action=android.intent.action.SET_ALARM;end'; }
-      catch(e){ console.error('PrEP: could not launch Android alarm intent', e); showAlarmFallback(); }
-      return;
-    }
-    if(isIOS()){
-      let left = false;
-      const markLeft = () => { left = true; };
+      // Use Android's generic SET_ALARM intent rather than targeting a
+      // particular Clock package. This lets the installed/default alarm
+      // app handle the request.
+      const intentUrl =
+        `intent:#Intent;action=android.intent.action.SET_ALARM;` +
+        `i.android.intent.extra.alarm.HOUR=${hrs};` +
+        `i.android.intent.extra.alarm.MINUTES=${mins};` +
+        `S.android.intent.extra.alarm.MESSAGE=PrEP%20Dose;end`;
+
+      let leftPage = false;
+      const markLeft = () => { leftPage = true; };
+
       document.addEventListener('visibilitychange', markLeft, { once: true });
       window.addEventListener('pagehide', markLeft, { once: true });
-      try{ window.location.href = 'clock-alarm://'; }
-      catch(e){ console.error('PrEP: could not launch iOS clock scheme', e); }
+
+      try {
+        // Keep this navigation directly inside the button tap.
+        window.location.href = intentUrl;
+      } catch(e) {
+        console.error('PrEP: could not launch Android alarm intent', e);
+      }
+
       setTimeout(() => {
         document.removeEventListener('visibilitychange', markLeft);
         window.removeEventListener('pagehide', markLeft);
-        if(!left) showAlarmFallback();
-      }, 1200);
+
+        if(!leftPage){
+          showAlarmFallback(timeFormatted);
+        }
+      }, 1500);
+
       return;
     }
-    alert("This hands off to your phone's Clock app, so it only does something useful on an Android or iPhone browser.");
+
+    if(isIOS()){
+      // iOS does not provide a dependable public browser URL scheme for
+      // opening Apple's Clock alarm screen, so use a clear fallback.
+      showAlarmFallback(timeFormatted);
+      return;
+    }
+
+    showAlarmFallback(timeFormatted);
   });
 
   // ---------- Backup: export / import ----------
@@ -1108,6 +1194,7 @@
       renderToday();
       renderCalendar();
       renderApptList();
+      updateExportIcsUI();
       renderDayDetail(null);
       alert('Import complete.');
     };
@@ -1130,6 +1217,7 @@
   renderToday();
   renderCalendar();
   renderApptList();
+  updateExportIcsUI();
   updateReminderUI();
 })();
 </script>
