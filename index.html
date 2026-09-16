@@ -1047,7 +1047,7 @@
     const perm = Notification.permission;
     if(perm === 'granted'){
       if(reminderStatus) reminderStatus.innerHTML = '<strong>Reminders are on.</strong> Keep this tab open and you\'ll get a notification at your reminder time if nothing\'s logged yet that day.';
-      reminderBtn.textContent = 'Reminders on';
+      reminderBtn.textContent = 'Reminder on';
       reminderBtn.disabled = true;
       startReminderLoop();
     } else if(perm === 'denied'){
