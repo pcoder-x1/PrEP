@@ -446,7 +446,7 @@
         <input type="time" id="appt-time" value="09:00" />
       </div>
       <button class="add-btn" id="add-appt-btn">Add</button>
-      <a id="export-ics-btn" class="btn-secondary" href="#" style="display:none;">Export to calendar app</a>
+      <a id="export-ics-btn" class="btn-secondary" href="#" style="display:none;">Export to calender app</a>
     </div>
   </section>
 
@@ -610,7 +610,6 @@
     takenAtInput.value = nowHHMM();
     renderToday();
     renderCalendar();
-    updateExportIcsUI();
     if(selectedDateKey === key) renderDayDetail(key);
   });
 
@@ -920,12 +919,24 @@
     e.preventDefault();
 
     const all = [];
-    Object.keys(data.appointments).forEach(dateKey => {
-      (data.appointments[dateKey] || []).forEach(appt => all.push({ appt, dateKey }));
+    Object.keys(data.appointments || {}).forEach(dateKey => {
+      const appts = Array.isArray(data.appointments[dateKey])
+        ? data.appointments[dateKey]
+        : [];
+      appts.forEach(appt => all.push({ appt, dateKey }));
     });
-    if(all.length === 0) return;
 
-    all.sort((a,b) => (a.dateKey + a.appt.time).localeCompare(b.dateKey + b.appt.time));
+    if(all.length === 0){
+      updateExportIcsUI();
+      return;
+    }
+
+    all.sort((a,b) => {
+      const aKey = `${a.dateKey}${a.appt.time || '09:00'}`;
+      const bKey = `${b.dateKey}${b.appt.time || '09:00'}`;
+      return aKey.localeCompare(bKey);
+    });
+
     const { appt, dateKey: dateVal } = all[0];
     const timeVal = appt.time || '09:00';
 
